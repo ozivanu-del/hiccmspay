@@ -12,12 +12,12 @@ function NoticeBox({ notice }: { notice: Notice | null }) { return notice ? <div
 export function LoginPage() {
   const { branding, login } = useApp()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('admin@prj.demo')
+  const [email, setEmail] = useState('operator@prj.demo')
   const [password, setPassword] = useState('Demo123!')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const accounts = [
-    ['Super Admin','admin@prj.demo'], ['Admin','operator@prj.demo'], ['Kasir','kasir@prj.demo'], ['Bendahara','bendahara@prj.demo'], ['Orang Tua','parent@prj.demo'],
+    ['Admin','operator@prj.demo'], ['Kasir','kasir@prj.demo'], ['Bendahara','bendahara@prj.demo'], ['Orang Tua','parent@prj.demo'],
   ] as const
   async function submit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError('')
@@ -28,7 +28,7 @@ export function LoginPage() {
   }
   return <div className="login-page">
     <section className="login-story"><div className="story-grid"/><div className="story-content"><div className="brand-mark brand-mark-large">PRJ</div><span className="eyebrow light">Digital wallet pesantren</span><h1>Satu kartu untuk hari yang lebih sederhana.</h1><p>{branding.tagline}</p><div className="story-points"><span><ShieldCheck/> Ledger terlindungi</span><span><Wifi/> Siap jaringan lokal</span><span><Smartphone/> Mobile-first</span></div></div><div className="story-orb"/></section>
-    <section className="login-panel"><form className="login-card" onSubmit={(event) => void submit(event)}><div className="login-heading"><span className="eyebrow">Selamat datang</span><h2>Masuk ke {branding.appName}</h2><p>{branding.organizationName}</p></div>{error && <div className="notice notice-error"><X size={18}/>{error}</div>}<label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label><label>Password<div className="input-icon"><LockKeyhole size={18}/><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></div></label><button className="button button-primary button-full" disabled={busy}>{busy ? <><Spinner/> Memverifikasi…</> : <>Masuk <ArrowRight size={18}/></>}</button><div className="demo-divider"><span>Akun demo</span></div><div className="demo-accounts">{accounts.map(([label,value]) => <button type="button" className={email === value ? 'active' : ''} key={value} onClick={() => { setEmail(value); setPassword('Demo123!') }}><strong>{label}</strong><small>{value}</small></button>)}</div><small className="demo-note">Password seluruh akun: <code>Demo123!</code> · hanya development</small></form></section>
+    <section className="login-panel"><form className="login-card" onSubmit={(event) => void submit(event)}><div className="login-heading"><span className="eyebrow">Selamat datang</span><h2>Masuk ke {branding.appName}</h2><p>{branding.organizationName}</p></div>{error && <div className="notice notice-error"><X size={18}/>{error}</div>}<label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label><label>Password<div className="input-icon"><LockKeyhole size={18}/><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></div></label><button className="button button-primary button-full" disabled={busy}>{busy ? <><Spinner/> Memverifikasi…</> : <>Masuk <ArrowRight size={18}/></>}</button><div className="demo-divider"><span>Akun demo</span></div><div className="demo-accounts">{accounts.map(([label,value]) => <button type="button" className={email === value ? 'active' : ''} key={value} onClick={() => { setEmail(value); setPassword('Demo123!') }}><strong>{label}</strong><small>{value}</small></button>)}</div><small className="demo-note">Password akun demo: <code>Demo123!</code> · hanya development</small></form></section>
   </div>
 }
 

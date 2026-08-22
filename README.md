@@ -154,11 +154,10 @@ Sesuaikan `apps/api/.dev.vars` agar memiliki `AUTH_SECRET` minimal 32 karakter. 
 
 ## Akun demo
 
-Password semua akun development: `Demo123!`
+Password akun demo pada tabel berikut: `Demo123!`
 
 | Role | Email |
 |---|---|
-| Super Admin | `admin@prj.demo` |
 | Admin | `operator@prj.demo` |
 | Kasir | `kasir@prj.demo` |
 | Bendahara | `bendahara@prj.demo` |
