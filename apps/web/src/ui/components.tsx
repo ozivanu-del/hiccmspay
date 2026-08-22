@@ -30,7 +30,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     ...(user.role === 'SUPER_ADMIN' ? [{ to: '/admin/audit-logs', label: 'Audit Log', icon: 'audit' as const }, { to: '/admin/system-health', label: 'System Health', icon: 'health' as const }, { to: '/admin/settings/branding', label: 'Branding', icon: 'settings' as const }] : []),
   ]
   const parent: NavItem[] = [{ to: '/parent/dashboard', label: 'Beranda', icon: 'dashboard' }, { to: '/parent/topup', label: 'Top Up', icon: 'topups' }, { to: '/parent/transactions', label: 'Riwayat', icon: 'transactions' }]
-  const cashier: NavItem[] = [{ to: '/cashier', label: 'Kasir', icon: 'scan' }, { to: '/cashier/history', label: 'Transaksi Saya', icon: 'transactions' }]
+  const cashier: NavItem[] = [{ to: '/cashier', label: 'Kasir', icon: 'scan' }, { to: '/cashier/products', label: 'Tambah Barang', icon: 'products' }, { to: '/cashier/history', label: 'Transaksi Saya', icon: 'transactions' }]
   const treasurer: NavItem[] = [{ to: '/treasurer', label: 'Dashboard', icon: 'dashboard' }, { to: '/treasurer/topups', label: 'Top Up', icon: 'topups' }, { to: '/treasurer/settlements', label: 'Settlement', icon: 'transactions' }, { to: '/treasurer/reconciliation', label: 'Rekonsiliasi', icon: 'reconciliation' }]
   const items = user.role === 'PARENT' ? parent : user.role === 'CASHIER' ? cashier : user.role === 'TREASURER' ? treasurer : admin
   return <div className="app-shell">

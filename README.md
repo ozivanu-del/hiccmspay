@@ -73,6 +73,7 @@ docs/
 - modul admin Orang Tua dengan akun portal, anak tertaut, dan saldo keluarga;
 - modul Wallet dengan saldo, total deposit, total belanja, kartu, dan detail ledger;
 - modul Top Up dengan status payment/sinkronisasi dan tiga contoh operasional;
+- akun kasir dapat menambah produk demo per kantin dengan validasi dan audit log;
 - pencarian santri dan tampilan wallet/card;
 - QR scanner berbasis kamera dengan fallback Card ID;
 - server-calculated cart dan atomic purchase;
@@ -107,6 +108,8 @@ Ledger dan transaksi memiliki trigger anti-update/anti-delete. Uang disimpan seb
 | GET | `/api/cards/:token` | Resolusi QR/Card ID |
 | GET | `/api/wallets/:studentId` | Saldo materialized |
 | GET | `/api/products` | Produk aktif per merchant |
+| GET | `/api/product-categories` | Kategori untuk katalog kantin |
+| POST | `/api/products` | Tambah produk oleh kasir/admin dengan audit |
 | GET | `/api/transactions` | Riwayat + item summary |
 | POST | `/api/transactions` | Atomic idempotent purchase |
 | POST | `/api/topups` | Membuat top-up parent |

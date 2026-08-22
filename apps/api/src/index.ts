@@ -7,7 +7,7 @@ import type { Context, MiddlewareHandler } from 'hono'
 import type { AppEnv, AuthPayload, Role } from './types'
 import { AppError, fail, ok } from './http'
 import { verifyHmac, verifyPassword } from './security'
-import { brandingSchema, loginSchema, purchaseSchema, refundSchema, topupSchema } from './schemas'
+import { brandingSchema, loginSchema, productSchema, purchaseSchema, refundSchema, topupSchema } from './schemas'
 import { createId, placeholders, safeJson, type CardWalletRow, type ProductRow, type TopupRow, type TransactionRow, type UserRow } from './db'
 import { paymentProvider } from './payment'
 
@@ -281,11 +281,33 @@ app.get('/api/wallets/:studentId', async (c) => {
 })
 
 app.get('/api/merchants', async (c) => ok(c, (await c.env.DB.prepare("SELECT id,name,location,status FROM merchants WHERE status='ACTIVE' ORDER BY name").all()).results))
+app.get('/api/product-categories', async (c) => ok(c, (await c.env.DB.prepare('SELECT id,name FROM product_categories ORDER BY name').all()).results))
 app.get('/api/products', async (c) => {
   const merchantId = c.req.query('merchantId')
   const query = `SELECT p.id,p.name,p.price,p.merchant_id,c.name AS category,p.status FROM products p JOIN product_categories c ON c.id=p.category_id WHERE p.status='ACTIVE'${merchantId ? ' AND p.merchant_id=?' : ''} ORDER BY c.name,p.name`
   const result = merchantId ? await c.env.DB.prepare(query).bind(merchantId).all<ProductRow>() : await c.env.DB.prepare(query).all<ProductRow>()
   return ok(c, result.results)
+})
+
+app.post('/api/products', roles('SUPER_ADMIN', 'ADMIN', 'CASHIER'), zValidator('json', productSchema, (result, c) => {
+  if (!result.success) return invalid(c, 'Nama, kategori, kantin, atau harga produk tidak valid')
+}), async (c) => {
+  const input = c.req.valid('json')
+  const [merchant, category, duplicate] = await Promise.all([
+    c.env.DB.prepare("SELECT id,name FROM merchants WHERE id=? AND status='ACTIVE'").bind(input.merchantId).first<{ id: string; name: string }>(),
+    c.env.DB.prepare('SELECT id,name FROM product_categories WHERE id=?').bind(input.categoryId).first<{ id: string; name: string }>(),
+    c.env.DB.prepare("SELECT id FROM products WHERE merchant_id=? AND name=? COLLATE NOCASE AND status='ACTIVE'").bind(input.merchantId, input.name).first<{ id: string }>(),
+  ])
+  if (!merchant) return fail(c, 'VALIDATION_ERROR', 'Kantin tidak ditemukan atau tidak aktif', 422)
+  if (!category) return fail(c, 'VALIDATION_ERROR', 'Kategori produk tidak ditemukan', 422)
+  if (duplicate) return fail(c, 'VALIDATION_ERROR', 'Produk dengan nama tersebut sudah ada di kantin ini', 409)
+  const productId = createId('PROD')
+  await c.env.DB.batch([
+    c.env.DB.prepare("INSERT INTO products (id,name,category_id,price,merchant_id,status) VALUES (?,?,?,?,?,'ACTIVE')")
+      .bind(productId, input.name, input.categoryId, input.price, input.merchantId),
+    auditStatement(c, 'PRODUCT_CREATED', 'PRODUCT', productId, undefined, { name: input.name, price: input.price, merchantId: input.merchantId, categoryId: input.categoryId }),
+  ])
+  return ok(c, { id: productId, name: input.name, price: input.price, merchant_id: input.merchantId, category: category.name, merchantName: merchant.name, status: 'ACTIVE' }, 'Produk berhasil ditambahkan', 201)
 })
 
 app.get('/api/parent/children', roles('PARENT'), async (c) => {

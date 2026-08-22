@@ -54,6 +54,30 @@ describe('PRJ SmartPay API', () => {
     })
   })
 
+  it('allows the cashier demo account to add a catalog product with audit trail', async () => {
+    const login = await worker.fetch(new Request('http://example.com/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'kasir@prj.demo', password: 'Demo123!' }),
+    }), env)
+    const cookie = login.headers.get('set-cookie')?.split(';')[0] ?? ''
+    const payload = { name: 'Jus Alpukat Demo', categoryId: 'CAT_DRINK', merchantId: 'MER003', price: 12_500 }
+
+    const created = await worker.fetch(new Request('http://example.com/api/products', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(payload),
+    }), env)
+    expect(created.status).toBe(201)
+    await expect(created.json()).resolves.toMatchObject({ success: true, data: { name: payload.name, price: payload.price, merchant_id: payload.merchantId, category: 'Minuman' } })
+
+    const catalog = await worker.fetch(new Request('http://example.com/api/products?merchantId=MER003', { headers: { Cookie: cookie } }), env)
+    expect(await catalog.text()).toContain('Jus Alpukat Demo')
+    const audit = await env.DB.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='PRODUCT_CREATED' AND actor_id='USR_CASHIER'").first<{ count: number }>()
+    expect(audit?.count).toBe(1)
+
+    const duplicate = await worker.fetch(new Request('http://example.com/api/products', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(payload),
+    }), env)
+    expect(duplicate.status).toBe(409)
+  })
+
   it('runs the complete parent top-up, sync, cashier purchase flow exactly once', async () => {
     const login = async (email: string) => {
       const response = await worker.fetch(new Request('http://example.com/api/auth/login', {
