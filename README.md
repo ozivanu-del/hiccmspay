@@ -2,7 +2,15 @@
 
 Digital wallet dan cashless payment untuk Pondok Raudhatul Jannah. Phase 1 menyediakan demo end-to-end yang benar-benar memproses ledger: parent membuat top-up, payment divalidasi, event disinkronkan, kasir memindai kartu, dan saldo berubah hanya melalui business logic server.
 
-> Status: **Phase 1 demo siap dijalankan lokal**. Payment gateway dan local PostgreSQL masih disimulasikan sesuai batas Phase 1.
+> Status: **Phase 1 demo telah aktif di Cloudflare**. Payment gateway dan local PostgreSQL masih disimulasikan sesuai batas Phase 1; deployment publik ini belum ditujukan untuk transaksi uang nyata.
+
+## Deployment aktif
+
+- Aplikasi: `https://prj-smartpay-web.ilhamstory78.workers.dev`
+- API: `https://prj-smartpay-api.ilhamstory78.workers.dev`
+- Database: Cloudflare D1 `prj-smartpay-db` (region APAC)
+
+Worker menggunakan secret Cloudflare untuk autentikasi dan webhook, CORS dibatasi ke origin aplikasi di atas, dan cookie sesi production memakai `HttpOnly`, `Secure`, serta `SameSite=None` karena frontend dan API berada pada hostname Workers terpisah.
 
 ## Audit repository awal
 
@@ -209,4 +217,3 @@ Lihat `.env.example`. Wajib Phase 1: `PUBLIC_API_URL`, `AUTH_SECRET`, `DEMO_MODE
 ## Roadmap
 
 Lihat [Phase 2–3 roadmap](docs/phase-2-roadmap.md) untuk local wallet server, PostgreSQL, sync agent, Cloudflare Queue, conflict handling, payment gateway, settlement, dan rekonsiliasi.
-

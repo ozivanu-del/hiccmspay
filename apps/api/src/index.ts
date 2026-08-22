@@ -134,7 +134,8 @@ app.post('/api/auth/login', zValidator('json', loginSchema, (result, c) => {
   const exp = Math.floor(Date.now() / 1000) + 8 * 60 * 60
   const payload: AuthPayload = { sub: user.id, email: user.email, name: user.name, role: authPayloadSchema.shape.role.parse(user.role), ...(user.parent_id ? { parentId: user.parent_id } : {}), exp }
   const token = await sign(payload, authSecret(c.env), 'HS256')
-  setCookie(c, 'prj_session', token, { httpOnly: true, secure: envSecret(c.env, 'ENVIRONMENT') === 'production', sameSite: 'Lax', maxAge: 8 * 60 * 60, path: '/' })
+  const isProduction = envSecret(c.env, 'ENVIRONMENT') === 'production'
+  setCookie(c, 'prj_session', token, { httpOnly: true, secure: isProduction, sameSite: isProduction ? 'None' : 'Lax', maxAge: 8 * 60 * 60, path: '/' })
   await c.env.DB.prepare(`INSERT INTO audit_logs (id, actor_id, actor_name, action, entity, entity_id, device, ip) VALUES (?, ?, ?, 'LOGIN', 'AUTH', ?, ?, ?)`)
     .bind(createId('AUD'), user.id, user.name, user.id, c.req.header('User-Agent')?.slice(0, 250) ?? null, clientIp(c)).run()
   return ok(c, { user: { id: user.id, email: user.email, name: user.name, role: user.role, parentId: user.parent_id } }, 'Login berhasil')

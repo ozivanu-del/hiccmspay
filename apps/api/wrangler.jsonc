@@ -8,13 +8,14 @@
     {
       "binding": "DB",
       "database_name": "prj-smartpay-db",
+      "database_id": "a2f179e9-9e43-45ce-bce2-4b869ffa0114",
       "migrations_dir": "migrations"
     }
   ],
   "vars": {
-    "ENVIRONMENT": "development",
+    "ENVIRONMENT": "production",
     "DEMO_MODE": "true",
-    "ALLOWED_ORIGIN": "http://localhost:4321"
+    "ALLOWED_ORIGIN": "https://prj-smartpay-web.ilhamstory78.workers.dev"
   },
   "observability": {
     "enabled": true,
