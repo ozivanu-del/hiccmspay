@@ -1,0 +1,20 @@
+{
+  "name": "prj-smartpay",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.0",
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,green \"pnpm --filter @prj/api dev\" \"pnpm --filter @prj/web dev\"",
+    "dev:api": "pnpm --filter @prj/api dev",
+    "dev:web": "pnpm --filter @prj/web dev",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "build": "pnpm -r build",
+    "cf-typegen": "pnpm --filter @prj/api cf-typegen"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
+
