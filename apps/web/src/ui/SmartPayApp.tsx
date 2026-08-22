@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { api } from '../lib/api'
 import type { Branding, Role, User } from '../lib/types'
 import { AppLayout, LoadingScreen } from './components'
-import { AuditPage, BrandingPage, CashierPage, DashboardPage, HealthPage, LoginPage, ModulePage, ParentPage, StudentsPage, TransactionsPage } from './pages'
+import { AdminTopupsPage, AuditPage, BrandingPage, CashierPage, DashboardPage, HealthPage, LoginPage, ModulePage, ParentPage, ParentsPage, StudentsPage, TransactionsPage, WalletsPage } from './pages'
 
 type AppContextValue = {
   user: User | null
@@ -79,6 +79,9 @@ function AppRoutes() {
     <Route path="/login" element={<LoginRoute />} />
     <Route path="/admin" element={<Gate allowed={['SUPER_ADMIN','ADMIN']}><DashboardPage /></Gate>} />
     <Route path="/admin/students" element={<Gate allowed={['SUPER_ADMIN','ADMIN']}><StudentsPage /></Gate>} />
+    <Route path="/admin/parents" element={<Gate allowed={['SUPER_ADMIN','ADMIN']}><ParentsPage /></Gate>} />
+    <Route path="/admin/wallets" element={<Gate allowed={['SUPER_ADMIN','ADMIN']}><WalletsPage /></Gate>} />
+    <Route path="/admin/topups" element={<Gate allowed={['SUPER_ADMIN','ADMIN']}><AdminTopupsPage /></Gate>} />
     <Route path="/admin/transactions" element={<Gate allowed={['SUPER_ADMIN','ADMIN']}><TransactionsPage /></Gate>} />
     <Route path="/admin/audit-logs" element={<Gate allowed={['SUPER_ADMIN']}><AuditPage /></Gate>} />
     <Route path="/admin/settings/branding" element={<Gate allowed={['SUPER_ADMIN']}><BrandingPage /></Gate>} />
@@ -87,6 +90,7 @@ function AppRoutes() {
     <Route path="/parent/*" element={<Gate allowed={['PARENT']}><ParentPage /></Gate>} />
     <Route path="/cashier/*" element={<Gate allowed={['CASHIER','SUPER_ADMIN']}><CashierPage /></Gate>} />
     <Route path="/treasurer" element={<Gate allowed={['TREASURER','SUPER_ADMIN']}><DashboardPage /></Gate>} />
+    <Route path="/treasurer/topups" element={<Gate allowed={['TREASURER','SUPER_ADMIN']}><AdminTopupsPage /></Gate>} />
     <Route path="/treasurer/:module" element={<Gate allowed={['TREASURER','SUPER_ADMIN']}><ModulePage /></Gate>} />
     <Route path="/" element={<Navigate to={user ? homeFor(user.role) : '/login'} replace />} />
     <Route path="*" element={<Navigate to={user ? homeFor(user.role) : '/login'} replace />} />

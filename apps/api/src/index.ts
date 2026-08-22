@@ -189,6 +189,80 @@ app.get('/api/students/:id', async (c) => {
   return ok(c, student)
 })
 
+app.get('/api/parents', roles('SUPER_ADMIN', 'ADMIN', 'TREASURER'), async (c) => {
+  const search = (c.req.query('search') ?? '').trim()
+  const limit = Math.min(100, Math.max(10, Number.parseInt(c.req.query('limit') ?? '50', 10) || 50))
+  const pattern = `%${search}%`
+  const [rows, summary] = await Promise.all([
+    c.env.DB.prepare(`SELECT p.id,p.name,p.phone,p.status,u.email,u.status AS accountStatus,
+      COUNT(DISTINCT ps.student_id) AS childCount,COALESCE(SUM(w.balance),0) AS totalBalance,
+      GROUP_CONCAT(s.id || '|' || s.name || '|' || s.class,';;') AS childSummary
+      FROM parents p LEFT JOIN users u ON u.parent_id=p.id LEFT JOIN parent_students ps ON ps.parent_id=p.id
+      LEFT JOIN students s ON s.id=ps.student_id LEFT JOIN wallets w ON w.student_id=s.id
+      WHERE p.name LIKE ? OR COALESCE(p.phone,'') LIKE ? OR COALESCE(u.email,'') LIKE ?
+      GROUP BY p.id,u.id ORDER BY p.name LIMIT ?`).bind(pattern, pattern, pattern, limit).all<{
+        id: string; name: string; phone: string | null; status: string; email: string | null; accountStatus: string | null
+        childCount: number; totalBalance: number; childSummary: string | null
+      }>(),
+    c.env.DB.prepare(`SELECT COUNT(DISTINCT p.id) AS totalParents,
+      COUNT(DISTINCT CASE WHEN u.status='ACTIVE' THEN u.id END) AS activeAccounts,
+      COUNT(DISTINCT ps.student_id) AS linkedStudents,COALESCE(SUM(w.balance),0) AS managedBalance
+      FROM parents p LEFT JOIN users u ON u.parent_id=p.id LEFT JOIN parent_students ps ON ps.parent_id=p.id
+      LEFT JOIN wallets w ON w.student_id=ps.student_id`).first(),
+  ])
+  return ok(c, {
+    summary,
+    items: rows.results.map((row) => ({
+      ...row,
+      children: row.childSummary ? row.childSummary.split(';;').map((child) => {
+        const [id, name, studentClass] = child.split('|')
+        return { id, name, class: studentClass }
+      }) : [],
+      childSummary: undefined,
+    })),
+  })
+})
+
+app.get('/api/wallets', roles('SUPER_ADMIN', 'ADMIN', 'TREASURER'), async (c) => {
+  const search = (c.req.query('search') ?? '').trim()
+  const limit = Math.min(100, Math.max(10, Number.parseInt(c.req.query('limit') ?? '50', 10) || 50))
+  const pattern = `%${search}%`
+  const [rows, summary] = await Promise.all([
+    c.env.DB.prepare(`SELECT w.id,w.student_id AS studentId,w.balance,w.version,w.updated_at AS updatedAt,
+      s.nis,s.name AS studentName,s.class,s.room,ca.card_number AS cardNumber,COALESCE(ca.status,'UNASSIGNED') AS cardStatus,
+      COALESCE((SELECT SUM(wl.amount) FROM wallet_ledger wl WHERE wl.wallet_id=w.id AND wl.direction='CREDIT' AND wl.scope='LOCAL'),0) AS totalCredit,
+      COALESCE((SELECT SUM(wl.amount) FROM wallet_ledger wl WHERE wl.wallet_id=w.id AND wl.direction='DEBIT' AND wl.scope='LOCAL'),0) AS totalDebit,
+      (SELECT MAX(wl.created_at) FROM wallet_ledger wl WHERE wl.wallet_id=w.id) AS lastActivity
+      FROM wallets w JOIN students s ON s.id=w.student_id
+      LEFT JOIN cards ca ON ca.student_id=s.id AND ca.status='ACTIVE'
+      WHERE s.name LIKE ? OR s.nis LIKE ? OR w.id LIKE ? OR COALESCE(ca.card_number,'') LIKE ?
+      ORDER BY w.balance DESC,s.name LIMIT ?`).bind(pattern, pattern, pattern, pattern, limit).all(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS totalWallets,COALESCE(SUM(balance),0) AS totalBalance,
+      SUM(CASE WHEN balance < 20000 THEN 1 ELSE 0 END) AS lowBalance,
+      (SELECT COUNT(*) FROM cards WHERE status='ACTIVE') AS activeCards FROM wallets`).first(),
+  ])
+  return ok(c, { summary, items: rows.results })
+})
+
+app.get('/api/wallets/:studentId/ledger', async (c) => {
+  const user = c.get('jwtPayload')
+  const studentId = c.req.param('studentId')
+  if (user.role === 'PARENT' && !(await parentOwnsStudent(c.env.DB, user.parentId, studentId))) return fail(c, 'FORBIDDEN', 'Wallet tidak terhubung dengan akun Anda', 403)
+  const [wallet, ledger, totals] = await Promise.all([
+    c.env.DB.prepare(`SELECT w.id,w.student_id AS studentId,w.balance,w.version,w.updated_at AS updatedAt,
+      s.nis,s.name AS studentName,s.class,s.room,ca.card_number AS cardNumber,COALESCE(ca.status,'UNASSIGNED') AS cardStatus
+      FROM wallets w JOIN students s ON s.id=w.student_id LEFT JOIN cards ca ON ca.student_id=s.id AND ca.status='ACTIVE'
+      WHERE s.id=?`).bind(studentId).first(),
+    c.env.DB.prepare(`SELECT id,reference_id AS referenceId,amount,type,direction,status,source,scope,created_at AS createdAt
+      FROM wallet_ledger WHERE student_id=? ORDER BY created_at DESC LIMIT 30`).bind(studentId).all(),
+    c.env.DB.prepare(`SELECT COALESCE(SUM(CASE WHEN direction='CREDIT' AND scope='LOCAL' THEN amount ELSE 0 END),0) AS totalCredit,
+      COALESCE(SUM(CASE WHEN direction='DEBIT' AND scope='LOCAL' THEN amount ELSE 0 END),0) AS totalDebit,
+      COUNT(CASE WHEN scope='LOCAL' THEN 1 END) AS ledgerEntries FROM wallet_ledger WHERE student_id=?`).bind(studentId).first(),
+  ])
+  if (!wallet) return fail(c, 'CARD_NOT_FOUND', 'Wallet tidak ditemukan', 404)
+  return ok(c, { wallet, totals, ledger: ledger.results })
+})
+
 app.get('/api/cards/:token', roles('SUPER_ADMIN', 'ADMIN', 'CASHIER'), async (c) => {
   const card = await c.env.DB.prepare(`SELECT ca.id AS card_id, ca.card_number, ca.status AS card_status, s.id AS student_id, s.nis, s.name AS student_name,
     s.photo, s.class, w.id AS wallet_id, w.balance FROM cards ca JOIN students s ON s.id=ca.student_id JOIN wallets w ON w.student_id=s.id
@@ -219,6 +293,26 @@ app.get('/api/parent/children', roles('PARENT'), async (c) => {
     FROM parent_students ps JOIN students s ON s.id=ps.student_id JOIN wallets w ON w.student_id=s.id LEFT JOIN cards ca ON ca.student_id=s.id AND ca.status='ACTIVE'
     WHERE ps.parent_id=? ORDER BY s.name`).bind(c.get('jwtPayload').parentId).all()
   return ok(c, rows.results)
+})
+
+app.get('/api/topups', roles('SUPER_ADMIN', 'ADMIN', 'TREASURER'), async (c) => {
+  const status = (c.req.query('status') ?? '').trim()
+  const [rows, summary] = await Promise.all([
+    (status
+      ? c.env.DB.prepare(`SELECT t.id,t.payment_reference AS paymentReference,t.amount,t.provider,t.status,t.created_at AS createdAt,t.paid_at AS paidAt,t.synced_at AS syncedAt,
+          p.name AS parentName,s.name AS studentName,s.nis,pay.status AS paymentStatus
+          FROM topups t JOIN parents p ON p.id=t.parent_id JOIN students s ON s.id=t.student_id LEFT JOIN payments pay ON pay.topup_id=t.id
+          WHERE t.status=? ORDER BY t.created_at DESC LIMIT 100`).bind(status)
+      : c.env.DB.prepare(`SELECT t.id,t.payment_reference AS paymentReference,t.amount,t.provider,t.status,t.created_at AS createdAt,t.paid_at AS paidAt,t.synced_at AS syncedAt,
+          p.name AS parentName,s.name AS studentName,s.nis,pay.status AS paymentStatus
+          FROM topups t JOIN parents p ON p.id=t.parent_id JOIN students s ON s.id=t.student_id LEFT JOIN payments pay ON pay.topup_id=t.id
+          ORDER BY t.created_at DESC LIMIT 100`)).all(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS totalTopups,
+      COALESCE(SUM(CASE WHEN status='SYNCED' THEN amount ELSE 0 END),0) AS syncedAmount,
+      SUM(CASE WHEN status='PENDING_PAYMENT' THEN 1 ELSE 0 END) AS pendingPayment,
+      SUM(CASE WHEN status='PENDING_SYNC' THEN 1 ELSE 0 END) AS pendingSync FROM topups`).first(),
+  ])
+  return ok(c, { summary, items: rows.results })
 })
 
 app.get('/api/transactions', async (c) => {

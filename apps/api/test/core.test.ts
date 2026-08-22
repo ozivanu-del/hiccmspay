@@ -24,6 +24,36 @@ describe('PRJ SmartPay API', () => {
     await expect(response.json()).resolves.toMatchObject({ success: false, error: { code: 'UNAUTHORIZED' } })
   })
 
+  it('serves operational parent, wallet, ledger, and deposit demo modules', async () => {
+    const login = await worker.fetch(new Request('http://example.com/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@prj.demo', password: 'Demo123!' }),
+    }), env)
+    const cookie = login.headers.get('set-cookie')?.split(';')[0] ?? ''
+
+    const parents = await worker.fetch(new Request('http://example.com/api/parents', { headers: { Cookie: cookie } }), env)
+    const parentsBody = await parents.json<{ success: boolean; data: { summary: { totalParents: number; activeAccounts: number; linkedStudents: number }; items: Array<{ id: string }> } }>()
+    expect(parentsBody).toMatchObject({ success: true, data: { summary: { totalParents: 20, activeAccounts: 1, linkedStudents: 21 } } })
+    expect(parentsBody.data.items).toContainEqual(expect.objectContaining({ id: 'PARENT001' }))
+
+    const wallets = await worker.fetch(new Request('http://example.com/api/wallets?search=Andi', { headers: { Cookie: cookie } }), env)
+    await expect(wallets.json()).resolves.toMatchObject({
+      success: true,
+      data: { summary: { totalWallets: 300, activeCards: 300 }, items: [{ studentId: 'STU000001', balance: 75_000, totalCredit: 75_000 }] },
+    })
+
+    const ledger = await worker.fetch(new Request('http://example.com/api/wallets/STU000001/ledger', { headers: { Cookie: cookie } }), env)
+    await expect(ledger.json()).resolves.toMatchObject({
+      success: true,
+      data: { wallet: { studentName: 'Andi Pratama', balance: 75_000 }, totals: { totalCredit: 75_000, totalDebit: 0, ledgerEntries: 1 } },
+    })
+
+    const topups = await worker.fetch(new Request('http://example.com/api/topups', { headers: { Cookie: cookie } }), env)
+    await expect(topups.json()).resolves.toMatchObject({
+      success: true,
+      data: { summary: { totalTopups: 3, syncedAmount: 100_000, pendingPayment: 1, pendingSync: 1 } },
+    })
+  })
+
   it('runs the complete parent top-up, sync, cashier purchase flow exactly once', async () => {
     const login = async (email: string) => {
       const response = await worker.fetch(new Request('http://example.com/api/auth/login', {

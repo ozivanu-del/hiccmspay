@@ -70,6 +70,9 @@ docs/
 - login dan RBAC untuk Super Admin, Admin, Kasir, Bendahara, Parent;
 - configuration-driven branding dan manifest PWA dinamis;
 - 300 santri, 20 parent, 300 wallet, 300 kartu, 50 produk, 5 kantin;
+- modul admin Orang Tua dengan akun portal, anak tertaut, dan saldo keluarga;
+- modul Wallet dengan saldo, total deposit, total belanja, kartu, dan detail ledger;
+- modul Top Up dengan status payment/sinkronisasi dan tiga contoh operasional;
 - pencarian santri dan tampilan wallet/card;
 - QR scanner berbasis kamera dengan fallback Card ID;
 - server-calculated cart dan atomic purchase;
@@ -98,12 +101,16 @@ Ledger dan transaksi memiliki trigger anti-update/anti-delete. Uang disimpan seb
 | GET | `/api/dashboard` | Ringkasan operasional |
 | GET | `/api/students` | Search/pagination santri |
 | GET | `/api/students/:id` | Detail dengan ownership check |
+| GET | `/api/parents` | Daftar wali, akun portal, anak tertaut, dan saldo |
+| GET | `/api/wallets` | Ringkasan dan pencarian seluruh wallet |
+| GET | `/api/wallets/:studentId/ledger` | Detail saldo, kredit, debit, dan mutasi wallet |
 | GET | `/api/cards/:token` | Resolusi QR/Card ID |
 | GET | `/api/wallets/:studentId` | Saldo materialized |
 | GET | `/api/products` | Produk aktif per merchant |
 | GET | `/api/transactions` | Riwayat + item summary |
 | POST | `/api/transactions` | Atomic idempotent purchase |
 | POST | `/api/topups` | Membuat top-up parent |
+| GET | `/api/topups` | Monitoring deposit dan status sinkronisasi |
 | POST | `/api/topups/:id/simulate-payment` | Payment demo tervalidasi |
 | POST | `/api/topups/:id/simulate-sync` | Kredit ledger lokal demo |
 | POST | `/api/webhooks/payment` | HMAC-verified payment webhook |
