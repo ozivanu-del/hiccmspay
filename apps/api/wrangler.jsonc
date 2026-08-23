@@ -12,6 +12,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "STUDENT_PHOTOS",
+      "bucket_name": "prj-smartpay-student-photos"
+    }
+  ],
   "vars": {
     "ENVIRONMENT": "production",
     "DEMO_MODE": "true",

@@ -25,13 +25,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { to: '/admin', label: 'Dashboard', icon: 'dashboard' }, { to: '/admin/students', label: 'Santri', icon: 'students' },
     { to: '/admin/parents', label: 'Orang Tua', icon: 'students' }, { to: '/admin/cards', label: 'Kartu', icon: 'cards' },
     { to: '/admin/wallets', label: 'Wallet', icon: 'wallets' }, { to: '/admin/transactions', label: 'Transaksi', icon: 'transactions' },
-    { to: '/admin/topups', label: 'Top Up', icon: 'topups' }, { to: '/admin/products', label: 'Produk', icon: 'products' },
+    { to: '/admin/topups', label: 'Setoran Tunai', icon: 'topups' }, { to: '/admin/products', label: 'Produk', icon: 'products' },
     { to: '/admin/merchants', label: 'Kantin', icon: 'merchants' },
     ...(user.role === 'SUPER_ADMIN' ? [{ to: '/admin/audit-logs', label: 'Audit Log', icon: 'audit' as const }, { to: '/admin/system-health', label: 'System Health', icon: 'health' as const }, { to: '/admin/settings/branding', label: 'Branding', icon: 'settings' as const }, { to: '/admin/settings/password', label: 'Ubah Password', icon: 'password' as const }] : []),
   ]
-  const parent: NavItem[] = [{ to: '/parent/dashboard', label: 'Beranda', icon: 'dashboard' }, { to: '/parent/topup', label: 'Top Up', icon: 'topups' }, { to: '/parent/transactions', label: 'Riwayat', icon: 'transactions' }]
-  const cashier: NavItem[] = [{ to: '/cashier', label: 'Kasir', icon: 'scan' }, { to: '/cashier/products', label: 'Tambah Barang', icon: 'products' }, { to: '/cashier/history', label: 'Transaksi Saya', icon: 'transactions' }]
-  const treasurer: NavItem[] = [{ to: '/treasurer', label: 'Dashboard', icon: 'dashboard' }, { to: '/treasurer/topups', label: 'Top Up', icon: 'topups' }, { to: '/treasurer/settlements', label: 'Settlement', icon: 'transactions' }, { to: '/treasurer/reconciliation', label: 'Rekonsiliasi', icon: 'reconciliation' }]
+  const parent: NavItem[] = [{ to: '/parent/dashboard', label: 'Beranda', icon: 'dashboard' }, { to: '/parent/transactions', label: 'Riwayat', icon: 'transactions' }]
+  const cashier: NavItem[] = [{ to: '/cashier', label: 'Kasir', icon: 'scan' }, { to: '/cashier/history', label: 'Transaksi Saya', icon: 'transactions' }]
+  const treasurer: NavItem[] = [{ to: '/treasurer', label: 'Dashboard', icon: 'dashboard' }, { to: '/treasurer/topups', label: 'Setoran Tunai', icon: 'topups' }, { to: '/treasurer/settlements', label: 'Settlement', icon: 'transactions' }, { to: '/treasurer/reconciliation', label: 'Rekonsiliasi', icon: 'reconciliation' }]
   const items = user.role === 'PARENT' ? parent : user.role === 'CASHIER' ? cashier : user.role === 'TREASURER' ? treasurer : admin
   return <div className="app-shell">
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>

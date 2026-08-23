@@ -8,9 +8,10 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const isFormData = init.body instanceof FormData
   const response = await fetch(`${API_URL}${path}`, {
     ...init, credentials: 'include',
-    headers: { ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
+    headers: { ...(init.body && !isFormData ? { 'Content-Type': 'application/json' } : {}), ...init.headers },
   })
   const body = await response.json() as ApiSuccess<T> | ApiFailure
   if (!response.ok || !body.success) {
@@ -20,6 +21,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body.data
 }
 
+export function apiAssetUrl(path?: string): string | undefined {
+  if (!path || path.startsWith('http://') || path.startsWith('https://') || path.startsWith('data:')) return path
+  return `${API_URL}${path}`
+}
+
 export const rupiah = (amount: number) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(amount)
 export const shortDate = (date: string) => new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(`${date.replace(' ', 'T')}Z`))
-

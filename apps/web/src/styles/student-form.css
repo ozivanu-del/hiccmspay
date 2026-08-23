@@ -1,0 +1,35 @@
+.student-create-form { margin-bottom: 18px; padding: 22px; }
+.student-create-form .panel-head { align-items: flex-start; }
+.student-create-form .panel-head h2 { font-size: 19px; }
+.student-create-form .panel-head p,
+.parent-form-section > div > p { color: var(--muted); font-size: 10px; margin-top: 4px; }
+.student-form-grid { display: grid; gap: 13px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 18px; }
+.student-create-form label { display: grid; font-size: 11px; font-weight: 700; gap: 7px; }
+.student-create-form label > small { color: var(--muted); font-size: 8px; font-weight: 500; }
+.student-create-form input,
+.student-create-form select { background: #fff; border: 1px solid var(--line); border-radius: 10px; outline: none; padding: 11px 12px; width: 100%; }
+.student-create-form input:focus,
+.student-create-form select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 12%, transparent); }
+.parent-form-section { border-top: 1px solid var(--line); margin-top: 20px; padding-top: 18px; }
+.parent-form-section h3 { font-size: 14px; }
+.parent-fields { grid-template-columns: 1fr 1fr .55fr; margin-top: 12px; }
+.photo-upload { align-items: center; background: #f3faf8; border: 1px dashed #9bc8c0; border-radius: 12px; color: var(--brand); cursor: pointer; display: flex !important; gap: 11px !important; margin-top: 18px; padding: 13px 15px; }
+.photo-upload span { flex: 1; }
+.photo-upload strong,
+.photo-upload small { display: block; }
+.photo-upload small { color: var(--muted); font-size: 9px; font-weight: 500; margin-top: 3px; }
+.photo-upload input { border: 0; box-shadow: none !important; font-size: 10px; padding: 0; width: auto; }
+.student-create-actions { border-top: 1px solid var(--line); display: flex; gap: 9px; justify-content: flex-end; margin-top: 18px; padding-top: 16px; }
+
+@media (max-width: 900px) {
+  .student-form-grid { grid-template-columns: 1fr 1fr; }
+  .parent-fields { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 620px) {
+  .student-form-grid,
+  .parent-fields { grid-template-columns: 1fr; }
+  .photo-upload { align-items: flex-start; flex-wrap: wrap; }
+  .photo-upload input { width: 100%; }
+  .student-create-actions .button { flex: 1; }
+}

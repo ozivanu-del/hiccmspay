@@ -7,7 +7,7 @@ import type { Context, MiddlewareHandler } from 'hono'
 import type { AppEnv, AuthPayload, Role } from './types'
 import { AppError, fail, ok } from './http'
 import { hashPassword, verifyHmac, verifyPassword } from './security'
-import { brandingSchema, loginSchema, passwordChangeSchema, productSchema, purchaseSchema, refundSchema, topupSchema } from './schemas'
+import { brandingSchema, cashierChargeSchema, cashDepositSchema, loginSchema, passwordChangeSchema, productSchema, purchaseSchema, refundSchema, studentCreateSchema, studentPromotionSchema, topupSchema } from './schemas'
 import { createId, placeholders, safeJson, type CardWalletRow, type ProductRow, type TopupRow, type TransactionRow, type UserRow } from './db'
 import { paymentProvider } from './payment'
 
@@ -34,6 +34,13 @@ function invalid(c: Context, message: string) {
 
 function clientIp(c: Context<AppEnv>): string | null {
   return c.req.header('CF-Connecting-IP') ?? null
+}
+
+function normalizePhone(value: string): string {
+  const digits = value.replace(/\D/g, '')
+  if (digits.startsWith('62')) return `0${digits.slice(2)}`
+  if (digits.startsWith('8')) return `0${digits}`
+  return digits
 }
 
 function auditStatement(c: import('hono').Context<AppEnv>, action: string, entity: string, entityId: string | null, before: unknown, after: unknown): D1PreparedStatement {
@@ -192,12 +199,111 @@ app.get('/api/students', roles('SUPER_ADMIN', 'ADMIN', 'TREASURER'), async (c) =
   const page = Math.max(1, Number.parseInt(c.req.query('page') ?? '1', 10) || 1)
   const limit = Math.min(100, Math.max(10, Number.parseInt(c.req.query('limit') ?? '25', 10) || 25))
   const pattern = `%${search}%`
-  const rows = await c.env.DB.prepare(`SELECT s.id, s.nis, s.name, s.photo, s.class, s.room, s.generation, s.status, w.id AS walletId, w.balance,
+  const rows = await c.env.DB.prepare(`SELECT s.id, s.nis, s.name, s.photo, s.class, s.education_level AS educationLevel, s.generation, s.status, w.id AS walletId, w.balance,
     ca.id AS cardId, ca.card_number AS cardNumber, ca.status AS cardStatus FROM students s JOIN wallets w ON w.student_id=s.id
     LEFT JOIN cards ca ON ca.student_id=s.id AND ca.status='ACTIVE' WHERE s.status = ? AND (s.name LIKE ? OR s.nis LIKE ?) ORDER BY s.name LIMIT ? OFFSET ?`)
     .bind(status, pattern, pattern, limit, (page - 1) * limit).all()
   const count = await c.env.DB.prepare('SELECT COUNT(*) AS value FROM students WHERE status = ? AND (name LIKE ? OR nis LIKE ?)').bind(status, pattern, pattern).first<{ value: number }>()
   return ok(c, { items: rows.results, page, limit, total: count?.value ?? 0 })
+})
+
+app.post('/api/students', roles('SUPER_ADMIN', 'ADMIN'), async (c) => {
+  const contentType = c.req.header('Content-Type') ?? ''
+  let raw: unknown
+  let photo: File | null = null
+  if (contentType.includes('multipart/form-data')) {
+    const form = await c.req.raw.formData()
+    const entry = form.get('photo')
+    photo = entry instanceof File && entry.size > 0 ? entry : null
+    raw = {
+      nis: form.get('nis') ?? undefined,
+      name: form.get('name') ?? undefined,
+      class: form.get('class') ?? undefined,
+      educationLevel: form.get('educationLevel') ?? undefined,
+      generation: Number(form.get('generation')),
+      parentName: form.get('parentName') ?? undefined,
+      parentPhone: form.get('parentPhone') ?? undefined,
+      relationship: form.get('relationship') ?? undefined,
+      cardNumber: form.get('cardNumber') || undefined,
+    }
+  } else {
+    const json = await c.req.json<Record<string, unknown>>()
+    raw = { ...json, generation: Number(json.generation) }
+  }
+  const parsed = studentCreateSchema.safeParse(raw)
+  if (!parsed.success) return invalid(c, parsed.error.issues[0]?.message ?? 'Data santri tidak valid')
+  const input = parsed.data
+  const normalizedPhone = normalizePhone(input.parentPhone)
+  if (normalizedPhone.length < 9 || normalizedPhone.length > 15) return invalid(c, 'Nomor HP orang tua tidak valid')
+  if (photo && (!['image/jpeg', 'image/png', 'image/webp'].includes(photo.type) || photo.size > 2 * 1024 * 1024)) {
+    return invalid(c, 'Foto harus JPG, PNG, atau WebP dengan ukuran maksimal 2 MB')
+  }
+
+  const studentId = createId('STU')
+  const parentId = createId('PARENT')
+  const walletId = createId('WAL')
+  const cardId = createId('CARD')
+  const cardNumber = input.cardNumber?.toUpperCase() ?? `PRJ-${input.nis.toUpperCase()}`
+  const qrToken = `PRJ-CARD-${crypto.randomUUID().toUpperCase()}`
+  const photoKey = photo ? `student-${studentId}-${crypto.randomUUID()}.${photo.type === 'image/png' ? 'png' : photo.type === 'image/webp' ? 'webp' : 'jpg'}` : null
+  const photoPath = photoKey ? `${new URL(c.req.url).origin}/api/student-photos/${photoKey}` : null
+
+  if (photo && photoKey) {
+    await c.env.STUDENT_PHOTOS.put(photoKey, photo.stream(), { httpMetadata: { contentType: photo.type } })
+  }
+  try {
+    await c.env.DB.batch([
+      c.env.DB.prepare(`INSERT OR IGNORE INTO parents (id,name,phone,phone_normalized) VALUES (?,?,?,?)`)
+        .bind(parentId, input.parentName, input.parentPhone, normalizedPhone),
+      c.env.DB.prepare(`INSERT INTO students (id,nis,name,photo,class,room,generation,education_level) VALUES (?,?,?,?,?,?,?,?)`)
+        .bind(studentId, input.nis, input.name, photoPath, input.class, input.educationLevel, input.generation, input.educationLevel),
+      c.env.DB.prepare('INSERT INTO wallets (id,student_id,balance) VALUES (?,?,0)').bind(walletId, studentId),
+      c.env.DB.prepare('INSERT INTO cards (id,card_number,student_id,qr_token) VALUES (?,?,?,?)').bind(cardId, cardNumber, studentId, qrToken),
+      c.env.DB.prepare(`INSERT INTO parent_students (parent_id,student_id,relationship)
+        SELECT id,?,? FROM parents WHERE phone_normalized=?`).bind(studentId, input.relationship, normalizedPhone),
+      auditStatement(c, 'STUDENT_CREATED', 'STUDENT', studentId, undefined, {
+        nis: input.nis, name: input.name, class: input.class, educationLevel: input.educationLevel,
+        parentPhone: normalizedPhone, relationship: input.relationship, cardNumber,
+      }),
+    ])
+  } catch (error) {
+    if (photoKey) await c.env.STUDENT_PHOTOS.delete(photoKey)
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('students.nis')) return invalid(c, 'NIS sudah digunakan oleh santri lain')
+    if (message.includes('cards.card_number')) return invalid(c, 'Nomor kartu sudah digunakan')
+    throw error
+  }
+  const parent = await c.env.DB.prepare('SELECT id,name,phone FROM parents WHERE phone_normalized=?').bind(normalizedPhone).first<{ id: string; name: string; phone: string }>()
+  return ok(c, {
+    id: studentId, nis: input.nis, name: input.name, photo: photoPath, class: input.class,
+    educationLevel: input.educationLevel, generation: input.generation, balance: 0, cardNumber,
+    cardStatus: 'ACTIVE', parent, relationship: input.relationship,
+  }, 'Santri, wallet, kartu, dan relasi orang tua berhasil dibuat', 201)
+})
+
+app.get('/api/student-photos/:key', async (c) => {
+  const key = c.req.param('key')
+  if (!/^student-[A-Za-z0-9-]+\.(jpg|png|webp)$/.test(key)) return fail(c, 'CARD_NOT_FOUND', 'Foto tidak ditemukan', 404)
+  const object = await c.env.STUDENT_PHOTOS.get(key)
+  if (!object) return fail(c, 'CARD_NOT_FOUND', 'Foto tidak ditemukan', 404)
+  const headers = new Headers({ 'Cache-Control': 'private, max-age=3600', ETag: object.httpEtag })
+  object.writeHttpMetadata(headers)
+  return new Response(object.body, { headers })
+})
+
+app.patch('/api/students/:id/promotion', roles('SUPER_ADMIN', 'ADMIN'), zValidator('json', studentPromotionSchema, (result, c) => {
+  if (!result.success) return invalid(c, 'Kelas atau jenjang tujuan tidak valid')
+}), async (c) => {
+  const input = c.req.valid('json')
+  const before = await c.env.DB.prepare('SELECT id,name,class,education_level AS educationLevel FROM students WHERE id=? AND status=?')
+    .bind(c.req.param('id'), 'ACTIVE').first<{ id: string; name: string; class: string; educationLevel: string }>()
+  if (!before) return fail(c, 'CARD_NOT_FOUND', 'Data santri tidak ditemukan', 404)
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE students SET class=?,education_level=?,updated_at=datetime('now') WHERE id=?")
+      .bind(input.nextClass, input.nextEducationLevel, before.id),
+    auditStatement(c, 'STUDENT_PROMOTED', 'STUDENT', before.id, before, { class: input.nextClass, educationLevel: input.nextEducationLevel }),
+  ])
+  return ok(c, { id: before.id, name: before.name, class: input.nextClass, educationLevel: input.nextEducationLevel }, 'Santri berhasil dipindahkan ke kelas/jenjang berikutnya')
 })
 
 app.get('/api/students/:id', async (c) => {
@@ -285,11 +391,16 @@ app.get('/api/wallets/:studentId/ledger', async (c) => {
 
 app.get('/api/cards/:token', roles('SUPER_ADMIN', 'ADMIN', 'CASHIER'), async (c) => {
   const card = await c.env.DB.prepare(`SELECT ca.id AS card_id, ca.card_number, ca.status AS card_status, s.id AS student_id, s.nis, s.name AS student_name,
-    s.photo, s.class, w.id AS wallet_id, w.balance FROM cards ca JOIN students s ON s.id=ca.student_id JOIN wallets w ON w.student_id=s.id
+    s.photo, s.class, s.education_level, w.id AS wallet_id, w.balance,
+    (SELECT GROUP_CONCAT(p.name, ', ') FROM parent_students ps JOIN parents p ON p.id=ps.parent_id WHERE ps.student_id=s.id) AS parent_name
+    FROM cards ca JOIN students s ON s.id=ca.student_id JOIN wallets w ON w.student_id=s.id
     WHERE ca.qr_token=? OR ca.card_number=?`).bind(c.req.param('token'), c.req.param('token')).first<CardWalletRow>()
   if (!card) return fail(c, 'CARD_NOT_FOUND', 'Kartu tidak ditemukan', 404)
   if (card.card_status !== 'ACTIVE') return fail(c, 'CARD_BLOCKED', `Kartu berstatus ${card.card_status}`, 409)
-  return ok(c, card)
+  const scanSessionId = createId('SCAN')
+  await c.env.DB.prepare("INSERT INTO cashier_scan_sessions (id,card_id,cashier_id,expires_at) VALUES (?,?,?,datetime('now','+2 minutes'))")
+    .bind(scanSessionId, card.card_id, c.get('jwtPayload').sub).run()
+  return ok(c, { ...card, scanSessionId })
 })
 
 app.get('/api/wallets/:studentId', async (c) => {
@@ -309,7 +420,7 @@ app.get('/api/products', async (c) => {
   return ok(c, result.results)
 })
 
-app.post('/api/products', roles('SUPER_ADMIN', 'ADMIN', 'CASHIER'), zValidator('json', productSchema, (result, c) => {
+app.post('/api/products', roles('SUPER_ADMIN', 'ADMIN'), zValidator('json', productSchema, (result, c) => {
   if (!result.success) return invalid(c, 'Nama, kategori, kantin, atau harga produk tidak valid')
 }), async (c) => {
   const input = c.req.valid('json')
@@ -331,7 +442,7 @@ app.post('/api/products', roles('SUPER_ADMIN', 'ADMIN', 'CASHIER'), zValidator('
 })
 
 app.get('/api/parent/children', roles('PARENT'), async (c) => {
-  const rows = await c.env.DB.prepare(`SELECT s.id,s.nis,s.name,s.photo,s.class,s.room,w.balance,ca.card_number AS cardNumber
+  const rows = await c.env.DB.prepare(`SELECT s.id,s.nis,s.name,s.photo,s.class,s.education_level AS educationLevel,w.balance,ca.card_number AS cardNumber
     FROM parent_students ps JOIN students s ON s.id=ps.student_id JOIN wallets w ON w.student_id=s.id LEFT JOIN cards ca ON ca.student_id=s.id AND ca.status='ACTIVE'
     WHERE ps.parent_id=? ORDER BY s.name`).bind(c.get('jwtPayload').parentId).all()
   return ok(c, rows.results)
@@ -357,6 +468,44 @@ app.get('/api/topups', roles('SUPER_ADMIN', 'ADMIN', 'TREASURER'), async (c) => 
   return ok(c, { summary, items: rows.results })
 })
 
+app.get('/api/cash-deposits', roles('SUPER_ADMIN', 'ADMIN', 'TREASURER'), async (c) => {
+  const [rows, summary] = await Promise.all([
+    c.env.DB.prepare(`SELECT t.id,t.reference_id AS referenceId,t.amount,t.created_at AS createdAt,t.metadata,
+      s.id AS studentId,s.name AS studentName,s.nis,s.class,u.name AS receivedBy
+      FROM transactions t JOIN students s ON s.id=t.student_id LEFT JOIN users u ON u.id=t.cashier_id
+      WHERE t.type='TOPUP' AND t.source='CASH_DEPOSIT' ORDER BY t.created_at DESC LIMIT 100`).all(),
+    c.env.DB.prepare(`SELECT COUNT(*) AS totalDeposits,COALESCE(SUM(amount),0) AS totalAmount,
+      COALESCE(SUM(CASE WHEN date(created_at)=date('now') THEN amount ELSE 0 END),0) AS todayAmount
+      FROM transactions WHERE type='TOPUP' AND source='CASH_DEPOSIT'`).first(),
+  ])
+  return ok(c, { summary, items: rows.results })
+})
+
+app.post('/api/cash-deposits', roles('SUPER_ADMIN', 'TREASURER'), zValidator('json', cashDepositSchema, (result, c) => {
+  if (!result.success) return invalid(c, 'Santri, nominal setoran, atau catatan tidak valid')
+}), async (c) => {
+  const input = c.req.valid('json')
+  const referenceId = c.req.header('Idempotency-Key')?.slice(0, 100) || createId('CASH')
+  const duplicate = await c.env.DB.prepare('SELECT id,amount FROM transactions WHERE reference_id=?').bind(referenceId).first()
+  if (duplicate) return ok(c, { ...duplicate, referenceId, idempotent: true }, 'ALREADY_PROCESSED')
+  const student = await c.env.DB.prepare(`SELECT s.id,s.name,s.nis,s.class,w.id AS walletId,w.balance
+    FROM students s JOIN wallets w ON w.student_id=s.id WHERE s.id=? AND s.status='ACTIVE'`).bind(input.studentId)
+    .first<{ id: string; name: string; nis: string; class: string; walletId: string; balance: number }>()
+  if (!student) return fail(c, 'VALIDATION_ERROR', 'Santri atau wallet tidak ditemukan', 404)
+  const transactionId = createId('TX-CASH')
+  await c.env.DB.batch([
+    c.env.DB.prepare('UPDATE wallets SET balance=balance+?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(input.amount, student.walletId),
+    c.env.DB.prepare(`INSERT INTO transactions (id,reference_id,student_id,wallet_id,amount,type,direction,status,source,cashier_id,device_id,metadata)
+      VALUES (?,?,?,?,?,'TOPUP','CREDIT','COMPLETED','CASH_DEPOSIT',?,'TREASURER_WEB',?)`)
+      .bind(transactionId, referenceId, student.id, student.walletId, input.amount, c.get('jwtPayload').sub, safeJson({ note: input.note || null })),
+    c.env.DB.prepare(`INSERT INTO wallet_ledger (id,transaction_id,reference_id,student_id,wallet_id,amount,type,direction,status,source,scope,metadata)
+      VALUES (?,?,?,?,?,?,'TOPUP','CREDIT','COMPLETED','CASH_DEPOSIT','LOCAL',?)`)
+      .bind(createId('LED-CASH'), transactionId, referenceId, student.id, student.walletId, input.amount, safeJson({ note: input.note || null })),
+    auditStatement(c, 'CASH_DEPOSIT', 'TRANSACTION', transactionId, undefined, { referenceId, studentId: student.id, amount: input.amount }),
+  ])
+  return ok(c, { id: transactionId, referenceId, student: { id: student.id, name: student.name, nis: student.nis }, amount: input.amount, balanceBefore: student.balance, balanceAfter: student.balance + input.amount }, 'Setoran tunai berhasil masuk ke saldo', 201)
+})
+
 app.get('/api/transactions', async (c) => {
   const user = c.get('jwtPayload')
   const studentId = c.req.query('studentId')
@@ -371,7 +520,53 @@ app.get('/api/transactions', async (c) => {
   return ok(c, rows.results)
 })
 
-app.post('/api/transactions', roles('SUPER_ADMIN', 'ADMIN', 'CASHIER'), zValidator('json', purchaseSchema, (result, c) => {
+app.post('/api/cashier/charge', roles('SUPER_ADMIN', 'CASHIER'), zValidator('json', cashierChargeSchema, (result, c) => {
+  if (!result.success) return invalid(c, 'Scan kartu dan nominal pembayaran harus valid')
+}), async (c) => {
+  const input = c.req.valid('json')
+  const duplicate = await c.env.DB.prepare('SELECT id,amount FROM transactions WHERE reference_id=?').bind(input.referenceId).first()
+  if (duplicate) return ok(c, { ...duplicate, referenceId: input.referenceId, idempotent: true }, 'ALREADY_PROCESSED')
+  const card = await c.env.DB.prepare(`SELECT ca.id AS card_id,ca.card_number,ca.status AS card_status,s.id AS student_id,s.nis,s.name AS student_name,s.photo,s.class,w.id AS wallet_id,w.balance
+    FROM cashier_scan_sessions ss JOIN cards ca ON ca.id=ss.card_id JOIN students s ON s.id=ca.student_id JOIN wallets w ON w.student_id=s.id
+    WHERE ss.id=? AND ss.cashier_id=? AND ss.expires_at>CURRENT_TIMESTAMP
+      AND (ca.qr_token=? OR ca.card_number=?) AND NOT EXISTS (SELECT 1 FROM cashier_scan_uses su WHERE su.scan_session_id=ss.id)`)
+    .bind(input.scanSessionId, c.get('jwtPayload').sub, input.cardToken, input.cardToken).first<CardWalletRow>()
+  if (!card) return fail(c, 'SCAN_REQUIRED', 'Scan kartu sudah dipakai atau kedaluwarsa. Silakan scan ulang.', 409)
+  if (card.card_status !== 'ACTIVE') return fail(c, 'CARD_BLOCKED', 'Kartu tidak aktif', 409)
+  const merchant = await c.env.DB.prepare("SELECT id,name FROM merchants WHERE id=? AND status='ACTIVE'").bind(input.merchantId).first<{ id: string; name: string }>()
+  if (!merchant) return fail(c, 'VALIDATION_ERROR', 'Kantin tidak ditemukan atau tidak aktif', 422)
+  if (card.balance < input.amount) return fail(c, 'INSUFFICIENT_BALANCE', 'Saldo tidak mencukupi', 409)
+  const limitRows = await c.env.DB.prepare("SELECT key,value FROM app_settings WHERE key IN ('limits_enabled','transaction_limit','daily_spending_limit')").all<{ key: string; value: string }>()
+  const settings = Object.fromEntries(limitRows.results.map((row) => [row.key, row.value]))
+  if (settings.limits_enabled === 'true') {
+    if (input.amount > Number(settings.transaction_limit)) return fail(c, 'TRANSACTION_LIMIT_EXCEEDED', 'Nominal melebihi batas per transaksi', 409)
+    const spent = await c.env.DB.prepare("SELECT COALESCE(SUM(amount),0) AS value FROM transactions WHERE student_id=? AND type='PURCHASE' AND date(created_at)=date('now')").bind(card.student_id).first<{ value: number }>()
+    if ((spent?.value ?? 0) + input.amount > Number(settings.daily_spending_limit)) return fail(c, 'TRANSACTION_LIMIT_EXCEEDED', 'Batas belanja harian telah tercapai', 409)
+  }
+  const transactionId = createId('TX')
+  try {
+    await c.env.DB.batch([
+      c.env.DB.prepare('UPDATE wallets SET balance=balance-?,version=version+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(input.amount, card.wallet_id),
+      c.env.DB.prepare(`INSERT INTO transactions (id,reference_id,student_id,wallet_id,amount,type,direction,status,source,merchant_id,cashier_id,device_id,metadata)
+        VALUES (?,?,?,?,?,'PURCHASE','DEBIT','COMPLETED','LOCAL_POS_AMOUNT',?,?,?,?)`)
+        .bind(transactionId, input.referenceId, card.student_id, card.wallet_id, input.amount, input.merchantId, c.get('jwtPayload').sub, input.deviceId, safeJson({ entryMode: 'AMOUNT_ONLY' })),
+      c.env.DB.prepare('INSERT INTO cashier_scan_uses (scan_session_id,transaction_id) VALUES (?,?)').bind(input.scanSessionId, transactionId),
+      c.env.DB.prepare(`INSERT INTO wallet_ledger (id,transaction_id,reference_id,student_id,wallet_id,amount,type,direction,status,source,scope,metadata)
+        VALUES (?,?,?,?,?,?,'PURCHASE','DEBIT','COMPLETED','LOCAL_POS_AMOUNT','LOCAL',?)`)
+        .bind(createId('LED'), transactionId, input.referenceId, card.student_id, card.wallet_id, input.amount, safeJson({ merchantId: input.merchantId, entryMode: 'AMOUNT_ONLY' })),
+      auditStatement(c, 'PURCHASE_AMOUNT', 'TRANSACTION', transactionId, undefined, { referenceId: input.referenceId, amount: input.amount, studentId: card.student_id, scanSessionId: input.scanSessionId }),
+    ])
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes('cashier_scan_uses.scan_session_id')) return fail(c, 'SCAN_REQUIRED', 'Scan kartu sudah digunakan. Silakan scan ulang.', 409)
+    if (message.includes('INSUFFICIENT_BALANCE')) return fail(c, 'INSUFFICIENT_BALANCE', 'Saldo berubah dan kini tidak mencukupi', 409)
+    if (message.includes('UNIQUE')) return ok(c, { referenceId: input.referenceId, idempotent: true }, 'ALREADY_PROCESSED')
+    throw error
+  }
+  return ok(c, { id: transactionId, referenceId: input.referenceId, student: { id: card.student_id, name: card.student_name }, merchant: merchant.name, amount: input.amount, balanceBefore: card.balance, balanceAfter: card.balance - input.amount }, 'TRANSAKSI BERHASIL', 201)
+})
+
+app.post('/api/transactions', roles('SUPER_ADMIN', 'ADMIN'), zValidator('json', purchaseSchema, (result, c) => {
   if (!result.success) return invalid(c, 'Data transaksi tidak valid')
 }), async (c) => {
   const input = c.req.valid('json')
@@ -422,6 +617,7 @@ app.post('/api/transactions', roles('SUPER_ADMIN', 'ADMIN', 'CASHIER'), zValidat
 app.post('/api/topups', roles('PARENT'), zValidator('json', topupSchema, (result, c) => {
   if (!result.success) return invalid(c, 'Nominal top-up harus Rp10.000–Rp1.000.000')
 }), async (c) => {
+  if (envSecret(c.env, 'PAYMENT_GATEWAY_ENABLED') !== 'true') return fail(c, 'PAYMENT_GATEWAY_PENDING', 'Payment gateway belum diaktifkan. Setoran saldo dilakukan melalui Bendahara.', 503)
   const input = c.req.valid('json')
   const user = c.get('jwtPayload')
   if (!(await parentOwnsStudent(c.env.DB, user.parentId, input.studentId))) return fail(c, 'FORBIDDEN', 'Anda hanya dapat mengisi saldo anak yang terhubung', 403)
@@ -466,6 +662,7 @@ async function markTopupPaid(c: import('hono').Context<AppEnv>, topup: TopupRow,
 }
 
 app.post('/api/topups/:id/simulate-payment', roles('PARENT', 'SUPER_ADMIN', 'TREASURER'), async (c) => {
+  if (envSecret(c.env, 'PAYMENT_GATEWAY_ENABLED') !== 'true') return fail(c, 'PAYMENT_GATEWAY_PENDING', 'Payment gateway belum diaktifkan', 503)
   if (c.env.DEMO_MODE !== 'true') return fail(c, 'FORBIDDEN', 'Simulasi payment hanya tersedia pada demo mode', 403)
   const topup = await c.env.DB.prepare('SELECT * FROM topups WHERE id=?').bind(c.req.param('id')).first<TopupRow>()
   if (!topup) return fail(c, 'TOPUP_NOT_FOUND', 'Top-up tidak ditemukan', 404)
@@ -477,6 +674,7 @@ app.post('/api/topups/:id/simulate-payment', roles('PARENT', 'SUPER_ADMIN', 'TRE
 })
 
 app.post('/api/topups/:id/simulate-sync', roles('PARENT', 'SUPER_ADMIN', 'TREASURER'), async (c) => {
+  if (envSecret(c.env, 'PAYMENT_GATEWAY_ENABLED') !== 'true') return fail(c, 'PAYMENT_GATEWAY_PENDING', 'Payment gateway belum diaktifkan', 503)
   if (c.env.DEMO_MODE !== 'true') return fail(c, 'FORBIDDEN', 'Simulasi sync hanya tersedia pada demo mode', 403)
   const topup = await c.env.DB.prepare('SELECT * FROM topups WHERE id=?').bind(c.req.param('id')).first<TopupRow>()
   if (!topup) return fail(c, 'TOPUP_NOT_FOUND', 'Top-up tidak ditemukan', 404)
@@ -508,6 +706,7 @@ app.post('/api/topups/:id/simulate-sync', roles('PARENT', 'SUPER_ADMIN', 'TREASU
 })
 
 app.post('/api/webhooks/payment', async (c) => {
+  if (envSecret(c.env, 'PAYMENT_GATEWAY_ENABLED') !== 'true') return fail(c, 'PAYMENT_GATEWAY_PENDING', 'Payment gateway belum diaktifkan', 503)
   const raw = await c.req.text()
   if (raw.length > 64_000) return fail(c, 'VALIDATION_ERROR', 'Payload webhook terlalu besar', 422)
   const secret = envSecret(c.env, 'PAYMENT_SECRET')
