@@ -6,8 +6,8 @@ import { zValidator } from '@hono/zod-validator'
 import type { Context, MiddlewareHandler } from 'hono'
 import type { AppEnv, AuthPayload, Role } from './types'
 import { AppError, fail, ok } from './http'
-import { verifyHmac, verifyPassword } from './security'
-import { brandingSchema, loginSchema, productSchema, purchaseSchema, refundSchema, topupSchema } from './schemas'
+import { hashPassword, verifyHmac, verifyPassword } from './security'
+import { brandingSchema, loginSchema, passwordChangeSchema, productSchema, purchaseSchema, refundSchema, topupSchema } from './schemas'
 import { createId, placeholders, safeJson, type CardWalletRow, type ProductRow, type TopupRow, type TransactionRow, type UserRow } from './db'
 import { paymentProvider } from './payment'
 
@@ -150,6 +150,26 @@ app.post('/api/auth/logout', requireAuth, async (c) => {
 app.use('/api/*', requireAuth)
 
 app.get('/api/me', (c) => ok(c, c.get('jwtPayload')))
+
+app.patch('/api/me/password', roles('SUPER_ADMIN'), zValidator('json', passwordChangeSchema, (result, c) => {
+  if (!result.success) return invalid(c, result.error.issues[0]?.message ?? 'Password tidak valid')
+}), async (c) => {
+  const actor = c.get('jwtPayload')
+  const { currentPassword, newPassword } = c.req.valid('json')
+  const user = await c.env.DB.prepare('SELECT password_hash, password_salt FROM users WHERE id = ? AND status = ?')
+    .bind(actor.sub, 'ACTIVE').first<Pick<UserRow, 'password_hash' | 'password_salt'>>()
+  if (!user || !(await verifyPassword(currentPassword, user.password_salt, user.password_hash))) {
+    return fail(c, 'UNAUTHORIZED', 'Password lama tidak sesuai', 401)
+  }
+  const next = await hashPassword(newPassword)
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE users SET password_hash = ?, password_salt = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(next.hash, next.salt, actor.sub),
+    auditStatement(c, 'PASSWORD_CHANGED', 'USER', actor.sub, undefined, { passwordChanged: true }),
+  ])
+  deleteCookie(c, 'prj_session', { path: '/' })
+  return ok(c, null, 'Password berhasil diubah. Silakan login kembali.')
+})
 
 app.get('/api/dashboard', roles('SUPER_ADMIN', 'ADMIN', 'TREASURER'), async (c) => {
   const [students, balance, todayTransactions, todaySpend, todayTopup, recent, merchants] = await Promise.all([

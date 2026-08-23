@@ -3,7 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { api } from '../lib/api'
 import type { Branding, Role, User } from '../lib/types'
 import { AppLayout, LoadingScreen } from './components'
-import { AdminTopupsPage, AuditPage, BrandingPage, CashierPage, CashierProductsPage, DashboardPage, HealthPage, LoginPage, ModulePage, ParentPage, ParentsPage, StudentsPage, TransactionsPage, WalletsPage } from './pages'
+import { AdminTopupsPage, AuditPage, BrandingPage, CashierPage, CashierProductsPage, DashboardPage, HealthPage, LoginPage, ModulePage, ParentPage, ParentsPage, PasswordPage, StudentsPage, TransactionsPage, WalletsPage } from './pages'
 
 type AppContextValue = {
   user: User | null
@@ -85,6 +85,7 @@ function AppRoutes() {
     <Route path="/admin/transactions" element={<Gate allowed={['SUPER_ADMIN','ADMIN']}><TransactionsPage /></Gate>} />
     <Route path="/admin/audit-logs" element={<Gate allowed={['SUPER_ADMIN']}><AuditPage /></Gate>} />
     <Route path="/admin/settings/branding" element={<Gate allowed={['SUPER_ADMIN']}><BrandingPage /></Gate>} />
+    <Route path="/admin/settings/password" element={<Gate allowed={['SUPER_ADMIN']}><PasswordPage /></Gate>} />
     <Route path="/admin/system-health" element={<Gate allowed={['SUPER_ADMIN']}><HealthPage /></Gate>} />
     <Route path="/admin/:module" element={<Gate allowed={['SUPER_ADMIN','ADMIN']}><ModulePage /></Gate>} />
     <Route path="/parent/*" element={<Gate allowed={['PARENT']}><ParentPage /></Gate>} />

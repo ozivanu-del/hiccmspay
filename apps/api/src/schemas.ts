@@ -1,6 +1,12 @@
 import { z } from 'zod'
 
 export const loginSchema = z.object({ email: z.email(), password: z.string().min(8).max(128) })
+export const passwordChangeSchema = z.object({
+  currentPassword: z.string().min(8).max(128),
+  newPassword: z.string().min(12).max(128),
+}).refine(({ currentPassword, newPassword }) => currentPassword !== newPassword, {
+  message: 'Password baru harus berbeda dari password lama', path: ['newPassword'],
+})
 export const topupSchema = z.object({ studentId: z.string().min(1), amount: z.number().int().min(10_000).max(1_000_000) })
 export const purchaseSchema = z.object({
   referenceId: z.string().min(8).max(100),

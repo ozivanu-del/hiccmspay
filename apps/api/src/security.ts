@@ -12,11 +12,20 @@ function fromHex(value: string): Uint8Array<ArrayBuffer> {
   return bytes
 }
 
-export async function verifyPassword(password: string, saltHex: string, expectedHex: string): Promise<boolean> {
+async function derivePassword(password: string, saltHex: string): Promise<string> {
   const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
-  const actual = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: fromHex(saltHex), iterations: 100_000 }, key, 256)
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: fromHex(saltHex), iterations: 100_000 }, key, 256)
+  return hex(bits)
+}
+
+export async function hashPassword(password: string): Promise<{ hash: string; salt: string }> {
+  const salt = hex(crypto.getRandomValues(new Uint8Array(16)).buffer)
+  return { hash: await derivePassword(password, salt), salt }
+}
+
+export async function verifyPassword(password: string, saltHex: string, expectedHex: string): Promise<boolean> {
   const expectedHash = await crypto.subtle.digest('SHA-256', encoder.encode(expectedHex))
-  const actualHash = await crypto.subtle.digest('SHA-256', encoder.encode(hex(actual)))
+  const actualHash = await crypto.subtle.digest('SHA-256', encoder.encode(await derivePassword(password, saltHex)))
   return timingSafeEqual(new Uint8Array(actualHash), new Uint8Array(expectedHash))
 }
 

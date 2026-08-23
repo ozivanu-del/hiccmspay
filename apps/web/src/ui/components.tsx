@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
-import { BookOpenCheck, Building2, ChevronRight, CircleDollarSign, CreditCard, FileClock, HeartPulse, LayoutDashboard, LogOut, Menu, Package, ReceiptText, ScanLine, Settings2, ShieldCheck, Users, WalletCards, X } from 'lucide-react'
+import { BookOpenCheck, Building2, ChevronRight, CircleDollarSign, CreditCard, FileClock, HeartPulse, KeyRound, LayoutDashboard, LogOut, Menu, Package, ReceiptText, ScanLine, Settings2, ShieldCheck, Users, WalletCards, X } from 'lucide-react'
 import { useApp } from './SmartPayApp'
 
 export function LoadingScreen() { return <div className="loading-screen"><div className="brand-mark">PRJ</div><div className="spinner" /><p>Menyiapkan SmartPay…</p></div> }
@@ -9,7 +9,7 @@ export function Empty({ title, detail }: { title: string; detail: string }) { re
 export function StatusBadge({ value }: { value: string }) { const good = ['ACTIVE','COMPLETED','SYNCED','PAID','ONLINE','CONNECTED'].includes(value); return <span className={`badge ${good ? 'badge-good' : value.includes('PENDING') ? 'badge-warn' : 'badge-neutral'}`}>{value.replaceAll('_',' ')}</span> }
 export function PageHeader({ eyebrow, title, detail, action }: { eyebrow?: string; title: string; detail?: string; action?: ReactNode }) { return <header className="page-header"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1>{detail && <p>{detail}</p>}</div>{action}</header> }
 
-const iconMap = { dashboard: LayoutDashboard, students: Users, cards: CreditCard, wallets: WalletCards, transactions: ReceiptText, topups: CircleDollarSign, products: Package, merchants: Building2, scan: ScanLine, audit: FileClock, health: HeartPulse, settings: Settings2, reconciliation: ShieldCheck }
+const iconMap = { dashboard: LayoutDashboard, students: Users, cards: CreditCard, wallets: WalletCards, transactions: ReceiptText, topups: CircleDollarSign, products: Package, merchants: Building2, scan: ScanLine, audit: FileClock, health: HeartPulse, settings: Settings2, password: KeyRound, reconciliation: ShieldCheck }
 type IconName = keyof typeof iconMap
 type NavItem = { to: string; label: string; icon: IconName }
 
@@ -27,7 +27,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { to: '/admin/wallets', label: 'Wallet', icon: 'wallets' }, { to: '/admin/transactions', label: 'Transaksi', icon: 'transactions' },
     { to: '/admin/topups', label: 'Top Up', icon: 'topups' }, { to: '/admin/products', label: 'Produk', icon: 'products' },
     { to: '/admin/merchants', label: 'Kantin', icon: 'merchants' },
-    ...(user.role === 'SUPER_ADMIN' ? [{ to: '/admin/audit-logs', label: 'Audit Log', icon: 'audit' as const }, { to: '/admin/system-health', label: 'System Health', icon: 'health' as const }, { to: '/admin/settings/branding', label: 'Branding', icon: 'settings' as const }] : []),
+    ...(user.role === 'SUPER_ADMIN' ? [{ to: '/admin/audit-logs', label: 'Audit Log', icon: 'audit' as const }, { to: '/admin/system-health', label: 'System Health', icon: 'health' as const }, { to: '/admin/settings/branding', label: 'Branding', icon: 'settings' as const }, { to: '/admin/settings/password', label: 'Ubah Password', icon: 'password' as const }] : []),
   ]
   const parent: NavItem[] = [{ to: '/parent/dashboard', label: 'Beranda', icon: 'dashboard' }, { to: '/parent/topup', label: 'Top Up', icon: 'topups' }, { to: '/parent/transactions', label: 'Riwayat', icon: 'transactions' }]
   const cashier: NavItem[] = [{ to: '/cashier', label: 'Kasir', icon: 'scan' }, { to: '/cashier/products', label: 'Tambah Barang', icon: 'products' }, { to: '/cashier/history', label: 'Transaksi Saya', icon: 'transactions' }]

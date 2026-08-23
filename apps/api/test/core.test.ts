@@ -127,4 +127,35 @@ describe('PRJ SmartPay API', () => {
     expect(parentHistoryText).toContain('"reference_id":"TX-TEST-K03-000001"')
     expect(parentHistoryText).toContain('"itemSummary":"Nasi Goreng · Es Teh"')
   })
+
+  it('allows only the authenticated Super Admin to change their own password', async () => {
+    const login = await worker.fetch(new Request('http://example.com/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@prj.demo', password: 'Demo123!' }),
+    }), env)
+    const cookie = login.headers.get('set-cookie')?.split(';')[0] ?? ''
+
+    const wrongCurrent = await worker.fetch(new Request('http://example.com/api/me/password', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ currentPassword: 'Wrong123!', newPassword: 'PrivatePass-2026!' }),
+    }), env)
+    expect(wrongCurrent.status).toBe(401)
+
+    const changed = await worker.fetch(new Request('http://example.com/api/me/password', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ currentPassword: 'Demo123!', newPassword: 'PrivatePass-2026!' }),
+    }), env)
+    expect(changed.status).toBe(200)
+    expect(changed.headers.get('set-cookie')).toContain('prj_session=')
+
+    const oldLogin = await worker.fetch(new Request('http://example.com/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@prj.demo', password: 'Demo123!' }),
+    }), env)
+    expect(oldLogin.status).toBe(401)
+    const newLogin = await worker.fetch(new Request('http://example.com/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@prj.demo', password: 'PrivatePass-2026!' }),
+    }), env)
+    expect(newLogin.status).toBe(200)
+    const audit = await env.DB.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='PASSWORD_CHANGED' AND actor_id='USR_ADMIN'").first<{ count: number }>()
+    expect(audit?.count).toBe(1)
+  })
 })
